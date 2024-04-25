@@ -1,29 +1,44 @@
-from uuid import UUID , uuid4
-from typing import Dict, Optional
-from app.tasks.models import Task, TaskInDB
+from sqlalchemy.orm import Session
+from app.tasks.models import Task as TaskSchema
+from app.database.models import Task
+from uuid import uuid4
 
-fake_tasks_db: Dict[str, TaskInDB] = {}
 
-def create_task(task_data: Task)-> TaskInDB:
+def create_task(db: Session, task_data: TaskSchema) -> Task:
     task_id = str(uuid4())
-    task_in_db= TaskInDB(**task_data.dict(), id= task_id)
-    fake_tasks_db[task_id]= task_in_db
+    db_task = Task(id=task_id, title=task_data.title, description=task_data.description,
+                   due_date=task_data.due_date, status=task_data.status,
+                   creator=task_data.creator, assigned_to=task_data.assigned_to)
+    db.add(db_task)
+    db.commit()
+    db.refresh(db_task)
+    return db_task
 
-    return task_in_db
 
-def get_task(task_id:str)-> Optional[TaskInDB]:
-    return fake_tasks_db.get(task_id)
+def get_task(db: Session, task_id: str) -> Task:
+    return db.query(Task).filter(Task.id == task_id).first()
 
-def update_task(task_id:str, task_data:Task)-> Optional[TaskInDB]:
-    if task_id not in fake_tasks_db:
+
+def update_task(db: Session, task_id: str, task_data: TaskSchema) -> Task:
+    existing_task = get_task(db, task_id)
+    if not existing_task:
         return None
-    updated_task= TaskInDB(**task_data.dict(), id= task_id)
-    fake_tasks_db[task_id]=updated_task
-    return updated_task
+
+    existing_task.title = task_data.title
+    existing_task.description = task_data.description
+    existing_task.due_date = task_data.due_date
+    existing_task.status = task_data.status
+    existing_task.assigned_to = task_data.assigned_to
+    db.commit()
+    db.refresh(existing_task)
+    return existing_task
 
 
-def delete_task(task_id:str)-> Optional[TaskInDB]:
-    if task_id not in fake_tasks_db:
+def delete_task(db: Session, task_id: str) -> Task:
+    existing_task = get_task(db, task_id)
+    if not existing_task:
         return None
-    deleted_task= fake_tasks_db.pop(task_id)
-    return deleted_task
+    
+    db.delete(existing_task)
+    db.commit()
+    return existing_task

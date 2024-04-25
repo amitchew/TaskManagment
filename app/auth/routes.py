@@ -1,42 +1,42 @@
-from fastapi import APIRouter, Depends,HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
-from app.auth.models import User, UserInDB
-from app.auth.security import authenticate_user, create_access_token,fake_users_db,pwd_context
-from app.dependecies import get_current_user
-from app.auth import User
-
+from app.auth.crud import create_user, get_user_by_username
+from app.auth.security import authenticate_user, create_access_token, pwd_context
+from app.dependencies import get_db
+from app.auth.models import User as UserSchema
+from app.database.models import User as UserDB
 
 router = APIRouter()
 
-@router.post("/register/" ,response_model=User)
-async def register(user:User):
-    if user.username in fake_users_db:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Username already registered")
+@router.post("/register/", response_model=UserSchema)
+async def register(user: UserSchema, db: Session = Depends(get_db)):
     
-    hashed_password= pwd_context.hash(user.password)
-    user_data= UserInDB(**user.dict(), hashed_password=hashed_password)
-
-    fake_users_db[user.username]= user_data.dict()
-
+    if get_user_by_username(db, user.username):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Username already registered"
+        )
+    
+    db_user = create_user(db, user)
+    return db_user
 
 @router.post("/login/")
-async def login(form_data: OAuth2PasswordRequestForm=Depends()):
-    
-    user= authenticate_user(fake_users_db, form_data.user_name,form_data.password0)
+async def login(
+    form_data: OAuth2PasswordRequestForm = Depends(),
+    db: Session = Depends(get_db)
+):
+    user = authenticate_user(get_user_by_username(db, form_data.username), form_data.password)
 
     if not user:
         raise HTTPException(
-            status_code= status.HTTP_401_UNAUTHORIZED,
+            status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid username or password",
-            headers={"WWW-Authenticate": "Bearer"}
+            headers={"WWW-Authenticate": "Bearer"},
         )
     
-    access_token=create_access_token(data={"sub": user.username})
-    return {"access_token": access_token,"token_type":"bearer"}
+    access_token = create_access_token(data={"sub": user.username})
+    return {"access_token": access_token, "token_type": "bearer"}
 
-
-    
-
-@router.post("/user/me/", response_model=User)
-async def read_current_user(current_user:User= Depends(get_current_user)):
+@router.get("/user/me/", response_model=UserSchema)
+async def read_current_user(current_user: UserSchema = Depends(get_current_user)):
     return current_user
